@@ -3,31 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Simple Link Shortener</title>
-    <style>
-        /* CSS for simple styling */
-        body { font-family: Arial, sans-serif; background-color: #f4f4f4; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); width: 400px; text-align: center; }
-        input[type="url"] { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { background-color: #007bff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; width: 100%; }
-        button:hover { background-color: #0056b3; }
-        #result { margin-top: 20px; padding: 10px; background-color: #e9e9e9; border-radius: 4px; word-wrap: break-word; }
-        .error { color: red; margin-top: 10px; }
-    </style>
+    <title>TinyLink Dashboard</title>
+    <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-    <div class="container">
-        <h1>✂️ Shorten Your Link</h1>
-        <form id="shortenForm">
-            <input type="url" id="longUrl" placeholder="Enter your long URL here (e.g., https://google.com)" required>
-            <button type="submit">Shorten</button>
-        </form>
-        <p id="error" class="error" style="display:none;"></p>
-        <div id="result" style="display:none;">
-            <p>Shortened Link:</p>
-            <a id="shortLink" href="#" target="_blank"></a>
+    <header class="app-header">
+        <div class="brand">
+            <span class="logo">TinyLink</span>
+            <p class="subtitle">Create & manage short links with ease.</p>
         </div>
-    </div>
-    <script src="app.js"></script>
+        <nav>
+            <a href="/">Dashboard</a>
+            <a href="/healthz" target="_blank" rel="noreferrer">Health</a>
+        </nav>
+    </header>
+
+    <main class="dashboard">
+        <section class="card">
+            <h2>Add a new link</h2>
+            <form id="createForm" class="form-grid">
+                <label>
+                    Destination URL
+                    <input type="url" id="longUrl" name="long_url" placeholder="https://www.example.com/docs" required>
+                </label>
+                <label>
+                    Custom code (optional)
+                    <input type="text" id="customCode" name="custom_code" placeholder="letters or numbers" pattern="[A-Za-z0-9]{6,8}">
+                </label>
+                <div class="form-actions">
+                    <button id="submitBtn" type="submit">Create link</button>
+                </div>
+                <p id="formError" class="error" role="alert"></p>
+                <p id="formSuccess" class="success" role="status"></p>
+            </form>
+        </section>
+
+        <section class="card">
+            <div class="card-header">
+                <h2>All links</h2>
+                <input type="search" id="searchInput" placeholder="Filter by code or URL">
+            </div>
+            <div id="tableState" class="state"></div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Short code</th>
+                            <th>Destination</th>
+                            <th>Clicks</th>
+                            <th>Last clicked</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="linksTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <small>© <span id="year"></span> TinyLink. Built with Express + Postgres.</small>
+    </footer>
+    <script src="/dashboard.js" type="module"></script>
 </body>
 </html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TinyLink · Stats</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="brand">
+            <a class="logo" href="/">TinyLink</a>
+            <p class="subtitle">Stats for <span id="codeLabel"></span></p>
+        </div>
+        <nav>
+            <a href="/">Dashboard</a>
+            <a id="shortLink" target="_blank" rel="noreferrer">Visit link</a>
+        </nav>
+    </header>
+
+    <main class="dashboard">
+        <section class="card" id="statsCard">
+            <div class="state" id="statsState">Loading stats…</div>
+            <div id="statsContent" hidden>
+                <h2 id="shortCodeDisplay"></h2>
+                <p><strong>Destination:</strong> <a id="longUrl" href="#" target="_blank" rel="noreferrer"></a></p>
+                <div class="stats-grid">
+                    <div>
+                        <p class="subtitle">Total clicks</p>
+                        <h3 id="clicks"></h3>
+                    </div>
+                    <div>
+                        <p class="subtitle">Last clicked</p>
+                        <h3 id="lastClicked"></h3>
+                    </div>
+                    <div>
+                        <p class="subtitle">Created at</p>
+                        <h3 id="createdAt"></h3>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="copyBtn" class="ghost-button">Copy link</button>
+                    <button id="deleteBtn" class="ghost-button danger">Delete</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <small>Need help? Reach out at support@tinylink.test</small>
+    </footer>
+
+    <script src="/stats.js" type="module"></script>
+</body>
+</html>
+

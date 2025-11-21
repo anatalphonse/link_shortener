@@ -13,6 +13,8 @@ const rateLimit = require('express-rate-limit');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const APP_VERSION = process.env.APP_VERSION || '1.0.0';
+const SHORT_CODE_REGEX = /^[A-Za-z0-9]{6,8}$/;
 
 // --- Configuration ---
 const poolConfig = process.env.DATABASE_URL
@@ -31,9 +33,34 @@ if (process.env.PGSSLMODE === 'require') {
 
 const pool = new Pool(poolConfig);
 
-// Helper function to generate a short code
+async function ensureSchema() {
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS links (
+            id BIGSERIAL PRIMARY KEY,
+            short_code VARCHAR(8) UNIQUE NOT NULL,
+            long_url TEXT NOT NULL,
+            click_count BIGINT NOT NULL DEFAULT 0,
+            last_clicked_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+    `);
+    await pool.query('ALTER TABLE links ADD COLUMN IF NOT EXISTS click_count BIGINT NOT NULL DEFAULT 0');
+    await pool.query('ALTER TABLE links ADD COLUMN IF NOT EXISTS last_clicked_at TIMESTAMPTZ');
+    await pool.query('ALTER TABLE links ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()');
+}
+
+ensureSchema().catch((err) => {
+    console.error('Failed to ensure schema:', err);
+    process.exit(1);
+});
+
+// Helper functions
 function generateShortCode(length = 8) {
-    return crypto.randomBytes(6).toString('base64url').slice(0, length);
+    let output = '';
+    while (output.length < length) {
+        output += crypto.randomBytes(6).toString('base64url').replace(/[^A-Za-z0-9]/g, '');
+    }
+    return output.slice(0, length);
 }
 
 function isValidUrl(candidate) {
@@ -66,72 +93,182 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 app.use(express.static(path.join(__dirname, 'public'))); // Serve static frontend files
 
-// --- API Endpoint: Create Short Link ---
-app.post('/api/shorten', async (req, res, next) => {
+function formatLinkResponse(row) {
+    return {
+        short_code: row.short_code,
+        long_url: row.long_url,
+        click_count: Number(row.click_count) || 0,
+        last_clicked_at: row.last_clicked_at,
+        created_at: row.created_at,
+        short_link: `${BASE_URL}/${row.short_code}`,
+    };
+}
+
+async function ensureUniqueCode(preferredCode) {
+    if (preferredCode) {
+        return preferredCode;
+    }
+
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const generated = generateShortCode(8);
+        const exists = await pool.query('SELECT 1 FROM links WHERE short_code = $1', [generated]);
+        if (exists.rowCount === 0) {
+            return generated;
+        }
+    }
+    throw new Error('Failed to generate unique short code');
+}
+
+// --- API: Create Link ---
+app.post('/api/links', async (req, res, next) => {
     const long_url = typeof req.body?.long_url === 'string' ? req.body.long_url.trim() : '';
-    
+    const custom_code_raw = typeof req.body?.custom_code === 'string' ? req.body.custom_code.trim() : '';
+
     if (!long_url) {
         return res.status(400).json({ error: 'long_url is required' });
     }
-
     if (!isValidUrl(long_url)) {
         return res.status(400).json({ error: 'URL must start with http:// or https://' });
     }
-    
-    const maxAttempts = 5;
-    let attempt = 0;
-    let short_code;
+
+    if (custom_code_raw && !SHORT_CODE_REGEX.test(custom_code_raw)) {
+        return res.status(400).json({ error: 'custom_code must match [A-Za-z0-9]{6,8}' });
+    }
 
     try {
-        while (attempt < maxAttempts) {
-            short_code = generateShortCode();
-            const result = await pool.query(
-                'INSERT INTO links (short_code, long_url) VALUES ($1, $2) ON CONFLICT (short_code) DO NOTHING RETURNING short_code',
-                [short_code, long_url]
-            );
+        const short_code = await ensureUniqueCode(custom_code_raw || '');
+        const insertResult = await pool.query(
+            `INSERT INTO links (short_code, long_url, click_count)
+             VALUES ($1, $2, 0)
+             ON CONFLICT (short_code) DO NOTHING
+             RETURNING short_code, long_url, click_count, last_clicked_at, created_at`,
+            [short_code, long_url],
+        );
 
-            if (result.rows.length) {
-                const short_link = `${BASE_URL}/${result.rows[0].short_code}`;
-                return res.status(201).json({ short_link });
-            }
-
-            attempt += 1;
+        if (insertResult.rowCount === 0) {
+            return res.status(409).json({ error: 'Short code already exists' });
         }
 
-        throw new Error('Failed to generate unique short code');
+        return res.status(201).json(formatLinkResponse(insertResult.rows[0]));
     } catch (err) {
-        console.error('Database error on shortening:', err);
-        next(err);
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'Short code already exists' });
+        }
+        console.error('Error creating link:', err);
+        return next(err);
     }
 });
 
-// --- Redirect Route (Handles the short link click) ---
-app.get('/:shortCode', async (req, res, next) => {
-    const { shortCode } = req.params;
+// --- API: List Links ---
+app.get('/api/links', async (req, res, next) => {
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const filterClauses = [];
+    const values = [];
+
+    if (search) {
+        values.push(`%${search}%`);
+        filterClauses.push('(short_code ILIKE $1 OR long_url ILIKE $1)');
+    }
+
+    const whereClause = filterClauses.length ? `WHERE ${filterClauses.join(' AND ')}` : '';
 
     try {
         const result = await pool.query(
-            'SELECT long_url FROM links WHERE short_code = $1',
-            [shortCode]
+            `SELECT short_code, long_url, click_count, last_clicked_at, created_at
+             FROM links
+             ${whereClause}
+             ORDER BY created_at DESC`,
+            values,
+        );
+        return res.json(result.rows.map(formatLinkResponse));
+    } catch (err) {
+        console.error('Error listing links:', err);
+        return next(err);
+    }
+});
+
+// --- API: Single Link ---
+app.get('/api/links/:code', async (req, res, next) => {
+    const { code } = req.params;
+    try {
+        const result = await pool.query(
+            `SELECT short_code, long_url, click_count, last_clicked_at, created_at
+             FROM links WHERE short_code = $1`,
+            [code],
+        );
+        if (!result.rowCount) {
+            return res.status(404).json({ error: 'Not found' });
+        }
+        return res.json(formatLinkResponse(result.rows[0]));
+    } catch (err) {
+        console.error('Error fetching link:', err);
+        return next(err);
+    }
+});
+
+// --- API: Delete Link ---
+app.delete('/api/links/:code', async (req, res, next) => {
+    const { code } = req.params;
+    try {
+        const result = await pool.query('DELETE FROM links WHERE short_code = $1 RETURNING short_code', [code]);
+        if (!result.rowCount) {
+            return res.status(404).json({ error: 'Not found' });
+        }
+        return res.status(204).send();
+    } catch (err) {
+        console.error('Error deleting link:', err);
+        return next(err);
+    }
+});
+
+// --- Redirect Route ---
+app.get('/:shortCode', async (req, res, next) => {
+    const { shortCode } = req.params;
+
+    if (!SHORT_CODE_REGEX.test(shortCode)) {
+        return res.status(404).send('Short link not found.');
+    }
+
+    try {
+        const updateResult = await pool.query(
+            `UPDATE links
+             SET click_count = click_count + 1,
+                 last_clicked_at = NOW()
+             WHERE short_code = $1
+             RETURNING long_url`,
+            [shortCode],
         );
 
-        if (result.rows.length === 0) {
+        if (!updateResult.rowCount) {
             return res.status(404).send('Short link not found.');
         }
 
-        const long_url = result.rows[0].long_url;
-        
-        // HTTP 302 Temporary Redirect is commonly used for shorteners
-        res.redirect(302, long_url); 
+        const long_url = updateResult.rows[0].long_url;
+        return res.redirect(302, long_url);
     } catch (err) {
         console.error('Database error on redirect:', err);
-        next(err);
+        return next(err);
     }
 });
 
 // --- Health Check ---
 app.get('/healthz', (req, res) => {
-    res.status(200).json({ status: 'ok', uptime: process.uptime() });
+    res.status(200).json({
+        ok: true,
+        version: APP_VERSION,
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+    });
+});
+
+// --- Frontend Routes ---
+app.get('/code/:code', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'stats.html'));
+});
+
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // --- Error Handler ---
