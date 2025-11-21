@@ -46,7 +46,8 @@ function isValidUrl(candidate) {
 }
 
 // --- Middleware ---
-if (process.env.TRUST_PROXY === 'true') {
+const shouldTrustProxy = process.env.TRUST_PROXY ?? (process.env.NODE_ENV === 'production' ? 'true' : 'false');
+if (shouldTrustProxy === 'true') {
     app.set('trust proxy', 1);
 }
 
