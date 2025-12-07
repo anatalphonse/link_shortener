@@ -1,21 +1,26 @@
 {
-  "name": "shortener",
-  "version": "1.0.0",
+  "name": "next_temp",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
-  "engines": {
-    "node": ">=18"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
   },
   "dependencies": {
-    "compression": "^1.8.1",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "express-rate-limit": "^8.2.1",
-    "helmet": "^8.1.0",
-    "morgan": "^1.10.1",
-    "pg": "^8.16.3"
+    "next": "16.0.7",
+    "pg": "^8.16.3",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.0.7",
+    "typescript": "^5"
   }
 }
