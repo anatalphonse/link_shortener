@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node -e \"if(process.env.RENDER) require('child_process').execSync('next build', {stdio:'inherit'})\""
   },
   "dependencies": {
     "next": "16.0.7",
